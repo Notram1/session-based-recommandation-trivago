@@ -37,8 +37,6 @@ class NNDataLoader():
 
         self.neighbor_prices = torch.FloatTensor(np.vstack(data.neighbor_prices))
 
-        
-
         self.star = torch.LongTensor(data.star)
         
         self.past_interactions_sess = torch.LongTensor(np.vstack(data.past_interactions_sess.values))
@@ -121,12 +119,12 @@ class NNDataGenerator():
         train.rename(columns={'reference': 'item_id', 'action_type':'action'}, inplace=True)
         test.rename(columns={'reference': 'item_id', 'action_type':'action'}, inplace=True)
         
-        # fill item_id with DUMMY
-        train.loc[train.action=='change of sort order','action'] = train.loc[train.action=='change of sort order'].apply(lambda row: row.action + str(row.item_id), axis=1)
-        test.loc[test.action=='change of sort order','action'] = test.loc[test.action=='change of sort order'].apply(lambda row: row.action + str(row.item_id), axis=1)
+        # fill item_id with DUMMY (some information gets discarded)
+        train.loc[train.action=='change of sort order','action'] = train.loc[train.action=='change of sort order'].apply(lambda row: row.action + ' ' + str(row.item_id), axis=1)
+        test.loc[test.action=='change of sort order','action'] = test.loc[test.action=='change of sort order'].apply(lambda row: row.action + ' ' + str(row.item_id), axis=1)
 
-        train.loc[train.action=='filter selection','action'] = train.loc[train.action=='filter selection'].apply(lambda row: row.action + str(row.item_id), axis=1)
-        test.loc[test.action=='filter selection','action'] = test.loc[test.action=='filter selection'].apply(lambda row: row.action + str(row.item_id), axis=1)
+        train.loc[train.action=='filter selection','action'] = train.loc[train.action=='filter selection'].apply(lambda row: row.action + ' ' + str(row.item_id), axis=1)
+        test.loc[test.action=='filter selection','action'] = test.loc[test.action=='filter selection'].apply(lambda row: row.action + ' ' + str(row.item_id), axis=1)
 
         train.loc[train.action.str.contains('change of sort order'), 'item_id'] = DUMMY_ITEM
         test.loc[test.action.str.contains('change of sort order'), 'item_id'] = DUMMY_ITEM
@@ -182,8 +180,8 @@ class NNDataGenerator():
         test['sess_step'] = test.groupby('session_id')['timestamp'].rank(method='max').apply(int)
         
         # merge city and platform columns
-        train['city_platform'] = train.apply(lambda x: x['city'] + x['platform'], axis=1)
-        test['city_platform'] = test.apply(lambda x: x['city'] + x['platform'], axis=1)
+        train['city_platform'] = train.apply(lambda x: x['city'] + ' ' + x['platform'], axis=1)
+        test['city_platform'] = test.apply(lambda x: x['city'] + ' ' + x['platform'], axis=1)
 
         # get last item
         train['last_item'] = np.nan
@@ -199,15 +197,13 @@ class NNDataGenerator():
         train['second_last_item'] = train_shifted_item_id
         test['second_last_item'] = test_shifted_item_id
 
-        train['step_rank'] = train.groupby('session_id')['timestamp'].rank(method='max', ascending=True)
-        test['step_rank'] = test.groupby('session_id')['timestamp'].rank(method='max', ascending=True)
+        # train['step_rank'] = train.groupby('session_id')['timestamp'].rank(method='max', ascending=True)
+        # test['step_rank'] = test.groupby('session_id')['timestamp'].rank(method='max', ascending=True)
         
-        train.loc[(train.step_rank == 1) , 'last_item'] = DUMMY_ITEM
-        test.loc[(test.step_rank == 1) , 'last_item'] = DUMMY_ITEM
-
-        train.loc[(train.step_rank == 2) , 'second_last_item'] = DUMMY_ITEM
-        test.loc[(test.step_rank == 2) , 'second_last_item'] = DUMMY_ITEM
-
+        train.loc[(train.step == 1) , 'last_item'] = DUMMY_ITEM
+        test.loc[(test.step == 1) , 'last_item'] = DUMMY_ITEM
+        train.loc[(train.step == 1) | (train.step == 2) , 'second_last_item'] = DUMMY_ITEM
+        test.loc[(train.step == 1) | (test.step == 2) , 'second_last_item'] = DUMMY_ITEM
 
 
         data = pd.concat([train, test], axis=0)
@@ -216,11 +212,11 @@ class NNDataGenerator():
         data_feature = data.loc[:,['id','session_id','timestamp', 'step']].copy()
         data_feature['time_diff'] = data_feature.groupby('session_id')['timestamp'].diff()
         data_feature['time_diff_diff'] = data_feature.groupby('session_id')['time_diff'].diff()
-        data_feature['time_diff'] = GaussRankScaler().fit_transform(data_feature['time_diff'].values)
-        data_feature['time_diff_diff'] = GaussRankScaler().fit_transform(data_feature['time_diff_diff'].values)
-        data_feature['mm_step'] = GaussRankScaler().fit_transform(data_feature['step'].values)
+        data_feature['time_diff'] = GaussRankScaler().fit_transform(data_feature['time_diff'].values.reshape(-1, 1))
+        data_feature['time_diff_diff'] = GaussRankScaler().fit_transform(data_feature['time_diff_diff'].values.reshape(-1, 1))
+        data_feature['mm_step'] = GaussRankScaler().fit_transform(data_feature['step'].values.reshape(-1, 1))
         data_feature['day'] = MinMaxScaler().fit_transform(pd.to_datetime(data.timestamp, unit='s').dt.day.values.reshape(-1,1) )
-        data_feature['rg_timestamp'] = GaussRankScaler().fit_transform(data_feature['timestamp'].values)
+        data_feature['rg_timestamp'] = GaussRankScaler().fit_transform(data_feature['timestamp'].values.reshape(-1, 1))
         
 
         data_feature = data_feature.drop( ['session_id','timestamp','step'],axis=1)
@@ -292,15 +288,12 @@ class NNDataGenerator():
         implicit_test = test.loc[test.action != self.transformed_clickout_action, :]
 
 
-        
-
-
         # get interaction count for all item
         interaction_item_ids = implicit_train.drop_duplicates(subset=['session_id','item_id','action']).item_id.tolist() + implicit_test.drop_duplicates(subset=['session_id','item_id','action']).item_id.tolist()
         unique_interaction_items, counts = np.unique(interaction_item_ids, return_counts=True)
         self.interaction_count_dict = dict(zip(unique_interaction_items, counts))        
 
-        # get interaction count for all item
+        # get interaction count for all image item
         interaction_image_item_ids = train.loc[train.action == self.transformed_interaction_image, :].drop_duplicates(subset=['session_id','item_id','action']).item_id.tolist() + test.loc[test.action == self.transformed_interaction_image, :].drop_duplicates(subset=['session_id','item_id','action']).item_id.tolist()
         unique_interaction_image_items, counts = np.unique(interaction_image_item_ids, return_counts=True)
         self.image_count_dict = dict(zip(unique_interaction_image_items, counts))        
@@ -309,10 +302,6 @@ class NNDataGenerator():
         # get only the clickout
         train = train.loc[train.action ==self.transformed_clickout_action,:]
         test = test.loc[test.action == self.transformed_clickout_action,:]
-
-
-        train['step_rank'] = train.groupby('session_id')['step'].rank(method='max', ascending=False)
-        
 
 
         # compute global item-price DataFrame
@@ -329,10 +318,7 @@ class NNDataGenerator():
         
         self.platform_clickout_count = pd.concat([train, test], axis=0).groupby(['platform','item_id']).size()
         
-
-
-
-
+        train['step_rank'] = train.groupby('session_id')['step'].rank(method='max', ascending=False)
         if config.debug:
             val = train.loc[train.step_rank == 1,:].iloc[:5]
         else:
@@ -341,19 +327,16 @@ class NNDataGenerator():
         val_index = val.index
         train = train.loc[~train.index.isin(val_index),:]
         
-
-        
         # {'user_id':[11,2,5,9,]}
         self.past_interaction_dict = {}
-        self.past_interaction_dict_sess = {}
+        # self.past_interaction_dict_sess = {}
         self.last_click_sess_dict = {}
         self.last_impressions_dict = {}
-        self.sess_impressions_dict = {}
+        # self.sess_impressions_dict = {}
         self.sess_last_step_dict = {}
         self.sess_last_imp_idx_dict = {}
         self.sess_last_price_dict = {}
         self.sess_time_diff_dict = {}
-
         
          # split the interaction df into train/ val and construct training sequences
         self.train_data = self.build_user_item_interactions(train, train_session_interactions, train_session_actions, train_session_time_diff)
@@ -361,15 +344,10 @@ class NNDataGenerator():
         self.test_data, labeled_test = self.build_user_item_interactions(test, test_session_interactions,  test_session_actions, test_session_time_diff, training=False)
 
         # standard scale price
-
-        price_sc = StandardScaler() 
-        
-        
+        price_sc = StandardScaler()        
         self.train_data['price_diff'] = price_sc.fit_transform(self.train_data.price_diff.values.reshape(-1,1))
         self.val_data['price_diff'] = price_sc.transform(self.val_data.price_diff.values.reshape(-1,1))
         self.test_data['price_diff'] = price_sc.transform(self.test_data.price_diff.values.reshape(-1,1))
-
-
 
         price_mm = MinMaxScaler()
         self.train_data['price_ratio'] = price_mm.fit_transform(self.train_data.price_ratio.values.reshape(-1,1))
@@ -377,9 +355,6 @@ class NNDataGenerator():
         self.test_data['price_ratio'] = price_mm.transform(self.test_data.price_ratio.values.reshape(-1,1))
 
    
-            
-
-
         price_mm.fit(np.hstack([np.hstack(self.train_data.neighbor_prices.values), np.hstack(self.val_data.neighbor_prices.values),\
             np.hstack(self.test_data.neighbor_prices.values)]).reshape(-1,1) )
         # print(self.train_data['neighbor_prices'].head(5))
@@ -388,22 +363,21 @@ class NNDataGenerator():
         self.test_data['neighbor_prices'] = self.test_data['neighbor_prices'].apply(lambda x: price_mm.transform(np.array(x).reshape(-1,1)).reshape(-1))
 
 
-
         if config.use_test:
             self.train_data = pd.concat([self.train_data, labeled_test], axis=0)
         
-        sampled_test_session = self.test_data.session_id.sample(frac=0.3)
-
+        # sampled_test_session = self.test_data.session_id.sample(frac=0.3)
         # self.train_data = pd.concat([self.train_data, self.test_data.loc[self.test_data.session_id.isin(sampled_test_session)]], axis=0)
+        
         # item_meta multi-hot
         item_meta = item_meta.loc[item_meta.item_id.isin(unique_items),:]
         item_meta['item_id'] = self.cat_encoders['item_id'].transform(item_meta['item_id'].values)
         item_meta['star'] = 0
-        item_meta.loc[item_meta.properties.apply(lambda x: '1 Star' in x), 'star'] = 1
-        item_meta.loc[item_meta.properties.apply(lambda x: '2 Star' in x), 'star'] = 2
-        item_meta.loc[item_meta.properties.apply(lambda x: '3 Star' in x), 'star'] = 3
-        item_meta.loc[item_meta.properties.apply(lambda x: '4 Star' in x), 'star'] = 4
-        item_meta.loc[item_meta.properties.apply(lambda x: '5 Star' in x), 'star'] = 5
+        item_meta.loc[item_meta.properties.apply(lambda x: any('1 Star' in property for property in x)), 'star'] = 1
+        item_meta.loc[item_meta.properties.apply(lambda x: any('2 Star' in property for property in x)), 'star'] = 2
+        item_meta.loc[item_meta.properties.apply(lambda x: any('3 Star' in property for property in x)), 'star'] = 3
+        item_meta.loc[item_meta.properties.apply(lambda x: any('4 Star' in property for property in x)), 'star'] = 4
+        item_meta.loc[item_meta.properties.apply(lambda x: any('5 Star' in property for property in x)), 'star'] = 5
 
         unique_property = list(OrderedSet(np.hstack(item_meta.properties.tolist())))
         self.unique_property = unique_property
@@ -428,14 +402,17 @@ class NNDataGenerator():
         
         tsvd = TruncatedSVD(n_components=30, n_iter=10, random_state=None)
         svd_matrix = tsvd.fit_transform(item_properties_df.drop( ['star', 'item_id'],axis=1).values)
-        print("explained ratio", tsvd.explained_variance_ratio_.sum())
+        print("explained ratio in item properties: ", tsvd.explained_variance_ratio_.sum())
         svd_ip_columns = [ f'svd_ip_{i}' for i in np.arange(30)]
         item_properties_df = pd.DataFrame(svd_matrix, columns=svd_ip_columns)
+        for c in svd_ip_columns:
+            item_properties_df[c] = MinMaxScaler().fit_transform(item_properties_df[c].values.reshape(-1,1))
         item_properties_df['item_id'] = item_properties_item_id
         item_properties_df['star'] = item_properties_star
-        item_properties_df['pet_friendly'] = item_meta.properties.apply(lambda x: 'Pet Friendly' in x)
-        item_properties_df['parking'] = item_meta.properties.apply(lambda x: 'Car Park' in x)
-        item_properties_df = item_properties_df.astype(dtype= {"item_id":"int32","pet_friendly":"float32", "parking":"float32"})
+        item_properties_df['pet_friendly'] = item_meta.properties.apply(lambda x: any('Pet Friendly' in property for property in x))
+        item_properties_df['parking'] = item_meta.properties.apply(lambda x: any('Car Park' in property for property in x))
+        item_properties_df['wifi'] = item_meta.properties.apply(lambda x: any('WiFi'in property for property in x))
+        item_properties_df = item_properties_df.astype(dtype= {"item_id":"int32","pet_friendly":"float32", "parking":"float32", "wifi":"float32"})
             
             
         filter_df = data.loc[ ~data.current_filters.isna(), ['id', 'current_filters']]
@@ -467,7 +444,7 @@ class NNDataGenerator():
         
         tsvd = TruncatedSVD(n_components=10, n_iter=10, random_state=None)
         svd_matrix = tsvd.fit_transform(filters_df.drop( ['id'],axis=1).values)
-        print("explained ratio", tsvd.explained_variance_ratio_.sum())
+        print("explained ratio in filters: ", tsvd.explained_variance_ratio_.sum())
         svd_ft_columns = [ f'svd_ft_{i}' for i in np.arange(10)]
         filters_df = pd.DataFrame(svd_matrix, columns=svd_ft_columns)
         for c in svd_ft_columns:
@@ -530,13 +507,14 @@ class NNDataGenerator():
         train_len = self.train_data.shape[0]
         val_len = self.val_data.shape[0]
 
-       
-
-        self.continuous_features = svd_ip_columns + svd_ft_columns + is_interacted_columns + is_clicked_columns + ['mm_step','time_diff', 'day', 'mm_price', 'equal_last_impressions', 'price_diff','price','last_price','price_ratio','is_clicked','is_interacted','item_popularity','is_interacted_image','is_interacted_deals','interaction_count','clickout_count','interaction_image_count','click_diff','rg_timestamp','equal_last_item','global_clickout_count_rank','rg_price','interaction_count_avg','avg_is_interacted_image','avg_is_interacted']
-
+        # Why not take every feature in train_data? Currently 115 out of 139
+        self.continuous_features = svd_ip_columns + svd_ft_columns + is_interacted_columns + is_clicked_columns + ['mm_step',
+        'time_diff', 'day', 'mm_price', 'equal_last_impressions', 'price_diff','price','last_price','price_ratio',
+        'is_clicked','is_interacted','item_popularity','is_interacted_image','is_interacted_deals','interaction_count',
+        'clickout_count','interaction_image_count','click_diff','rg_timestamp','equal_last_item','global_clickout_count_rank',
+        'rg_price','interaction_count_avg','avg_is_interacted_image','avg_is_interacted']
 
         # normalize num_impressions
-
 
         # target encoding
         agg_cols = ['impression_index','price_rank']
@@ -548,8 +526,6 @@ class NNDataGenerator():
             self.test_data[f'{c}_label_avg'] = self.test_data[c].map(mean)
 
             self.continuous_features.append(f'{c}_label_avg')    
-
-    
         
         agg_cols = ['city']
         for c in agg_cols:
@@ -577,17 +553,12 @@ class NNDataGenerator():
         self.test_data['global_clickout_count_rank'] /= 25
 
         
-               
-                      
-
-        # fill zero
-        for col in ['star','time_diff']:
+        # fill zero (TODO: handle item property nan: parking, wifi, pet_friendly if you want to include them)
+        for col in ['star','time_diff', 'time_diff_diff']:
 
             self.train_data.loc[:,col].fillna(0, inplace=True)
             self.val_data.loc[:,col].fillna(0, inplace=True)
             self.test_data.loc[:,col].fillna(0, inplace=True)
-
-        
 
         for up in self.continuous_features :
             mean_value = self.train_data.loc[ ~self.train_data[up].isna() , up].mean()
@@ -595,7 +566,6 @@ class NNDataGenerator():
             self.val_data.loc[:,up].fillna(mean_value, inplace=True)
             self.test_data.loc[:,up].fillna(mean_value, inplace=True)
         
-
         for c in self.continuous_features:
             if self.train_data[c].isna().sum() >0 or self.val_data[c].isna().sum() >0 or self.test_data[c].isna().sum() >0:
                 print("is null!!", c)
@@ -632,16 +602,12 @@ class NNDataGenerator():
             #     self.past_interaction_dict_sess[row.session_id] = [self.transformed_dummy_item] * self.config.sess_length
             if row.session_id not in self.last_click_sess_dict:
                 self.last_click_sess_dict[row.session_id] = self.transformed_dummy_item
-
             if row.session_id not in self.last_impressions_dict:
                 self.last_impressions_dict[row.session_id] = None
-
             if row.session_id not in self.sess_last_imp_idx_dict:
                 self.sess_last_imp_idx_dict[row.session_id] = DUMMY_IMPRESSION_INDEX
-
             if row.session_id not in self.sess_last_price_dict:
-                self.sess_last_price_dict[row.session_id] = None
-            
+                self.sess_last_price_dict[row.session_id] = None            
             if row.session_id not in self.sess_time_diff_dict:
                 self.sess_time_diff_dict[row.session_id] = None
 
@@ -651,6 +617,7 @@ class NNDataGenerator():
             sess_step = row.sess_step
             session_id = row.session_id
             
+            # keep interactions and actions only until current clickout item (padded to sess_length)
             current_session_interactions = session_interactions[session_id][:self.config.sess_length+ sess_step -1] # -1 for excluding the current row
             current_session_interactions = current_session_interactions[-self.config.sess_length:]
             
@@ -670,12 +637,12 @@ class NNDataGenerator():
                 second_last_interact_index = DUMMY_IMPRESSION_INDEX
 
             # if row.item_id != self.transformed_nan_item:
-                # training
+            #     # training
             label = transformed_impressions == row.item_id
             # else:
 
             # last3_impression_idices = [ transformed_impressions.index(imp)   for imp in session_interactions[session_id][self.config.sess_length+ sess_step -4:self.config.sess_length+ sess_step -1] if imp in transformed_impressions else DUMMY_IMPRESSION_INDEX]
-            # #     # test
+            #     # test
             #     label = row.pseudo_label
             # if len(transformed_impressions) < 25:
             #     padded_transformed_impressions = np.array(transformed_impressions.tolist() + [self.transformed_dummy_item] * (25 - len(transformed_impressions)))
@@ -686,12 +653,10 @@ class NNDataGenerator():
             sess_unique_items, counts = np.unique(interaction_image_item, return_counts=True)
             interaction_image_count_dict = dict(zip(sess_unique_items, counts))
 
-
             interaction_deals_indices = np.array(session_actions[session_id][:self.config.sess_length+ sess_step -1]) == self.transformed_interaction_deals
             interaction_deals_item =  np.array(session_interactions[session_id][:self.config.sess_length+ sess_step -1])[interaction_deals_indices]
             sess_unique_deals_items, counts = np.unique(interaction_deals_item, return_counts=True)
             interaction_deals_count_dict = dict(zip(sess_unique_deals_items, counts))
-
 
             interaction_clickout_indices = np.array(session_actions[session_id][:self.config.sess_length+ sess_step -1]) == self.transformed_clickout_action
             interaction_clickout_item =  np.array(session_interactions[session_id][:self.config.sess_length+ sess_step -1])[interaction_clickout_indices]
@@ -703,7 +668,7 @@ class NNDataGenerator():
 
             # don't leak the current clickout info
             unleaked_clickout_count = [self.clickout_count_dict[imp] if imp in self.clickout_count_dict else 0 for imp in transformed_impressions]
-            unleaked_clickout_count = [unleaked_clickout_count[idx] -1 if imp == row.item_id else unleaked_clickout_count[idx] for idx, imp in enumerate(transformed_impressions)]
+            unleaked_clickout_count = [unleaked_clickout_count[idx] - 1 if imp == row.item_id else unleaked_clickout_count[idx] for idx, imp in enumerate(transformed_impressions)]
 
             # unleaked_platform_clickout_count = [self.platform_clickout_count[row.platform, imp] if (row.platform, imp) in self.platform_clickout_count else 0 for imp in transformed_impressions]
             # unleaked_platform_clickout_count = [unleaked_platform_clickout_count[idx] -1 if imp == row.item_id else unleaked_platform_clickout_count[idx] for idx, imp in enumerate(transformed_impressions)]
@@ -746,61 +711,37 @@ class NNDataGenerator():
             current_rows[:, 4] = [np.array(self.past_interaction_dict[row.user_id])] * len(row.impressions)
             current_rows[:, 5] = price_rank
             current_rows[:, 6] = row.city
-            current_rows[:, 7] = row.last_item
-
-            # impression index               
-            current_rows[:, 8] = np.arange(len(transformed_impressions))
+            current_rows[:, 7] = row.last_item                           
+            current_rows[:, 8] = np.arange(len(transformed_impressions)) # impression index
             current_rows[:, 9] = row.step
-            current_rows[:, 10] = row.id
-            
+            current_rows[:, 10] = row.id            
             current_rows[:, 11] = [np.array(current_session_interactions)] * len(row.impressions)
             current_rows[:, 12] = [np.array(current_session_actions)] * len(row.impressions)
             current_rows[:, 13] = MinMaxScaler().fit_transform(np.array(row.prices).reshape(-1,1)).reshape(-1)
             current_rows[:, 14] = row.prices
-
-            # last click item id
-            current_rows[:, 15] = self.last_click_sess_dict[row.session_id]
-
-            # equal_last_impressions
-            current_rows[:, 16] = self.last_impressions_dict[row.session_id] == transformed_impressions.tolist() 
-
-            # impression index of last clicked item
-            current_rows[:, 17] = self.sess_last_imp_idx_dict[row.session_id]
-
-            #impression index of last interacted item 
-            current_rows[:, 18] = last_interact_index
-
-            # price difference with last interacted item
-            current_rows[:, 19] = row.prices - self.sess_last_price_dict[row.session_id] if self.sess_last_price_dict[row.session_id] else 0
-
-
+            current_rows[:, 15] = self.last_click_sess_dict[row.session_id] # last click item id
+            current_rows[:, 16] = self.last_impressions_dict[row.session_id] == transformed_impressions.tolist() # equal_last_impressions
+            current_rows[:, 17] = self.sess_last_imp_idx_dict[row.session_id] # impression index of last clicked item 
+            current_rows[:, 18] = last_interact_index #impression index of last interacted item            
+            current_rows[:, 19] = row.prices - self.sess_last_price_dict[row.session_id] if self.sess_last_price_dict[row.session_id] else 0 # price difference with last interacted item
             current_rows[:, 20] = self.sess_last_price_dict[row.session_id] if self.sess_last_price_dict[row.session_id] else 0
             current_rows[:, 21] = row.prices / self.sess_last_price_dict[row.session_id] if self.sess_last_price_dict[row.session_id] else 0
-            current_rows[:, 22] = [ padded_prices[i:i+5] for i in range(len(row.impressions))]
-
+            current_rows[:, 22] = [padded_prices[i:i+5] for i in range(len(row.impressions))] # current price together with 2 before and after
             current_rows[:, 23] = [np.concatenate([padded_transformed_impressions[:i], padded_transformed_impressions[i+1:]]) for i in range(len(row.impressions))]
-            current_rows[:, 24] = row.city_platform
-
-            # if that item has been clicked  by the current user
-            current_rows[:, 25] = [imp in self.past_interaction_dict[row.user_id] for imp in transformed_impressions]
-
-            # if that item has been interaced in the current session
-            current_rows[:, 26] = [imp in session_interactions[session_id][:self.config.sess_length+ sess_step -1] for imp in transformed_impressions]
-
-            # note that the impressions here was not transformed
-            current_rows[:, 27] = [self.item_popularity_dict[imp] for imp in row.impressions]
-
+            current_rows[:, 24] = row.city_platform            
+            current_rows[:, 25] = [imp in self.past_interaction_dict[row.user_id] for imp in transformed_impressions] # if that item has been clicked by the current user            
+            current_rows[:, 26] = [imp in session_interactions[session_id][:self.config.sess_length+ sess_step -1] for imp in transformed_impressions] # if that item has been interaced in the current session            
+            current_rows[:, 27] = [self.item_popularity_dict[imp] for imp in row.impressions] # note that the impressions here were not transformed
             current_rows[:, 28] = [1 if imp in interaction_image_count_dict else 0 for imp in transformed_impressions] 
             current_rows[:, 29] = [1 if imp in interaction_deals_count_dict else 0 for imp in transformed_impressions] 
-
-            current_rows[:, 30] = [self.interaction_count_dict[imp] if imp in self.interaction_count_dict else 0 for imp in transformed_impressions]
+            current_rows[:, 30] = [float(self.interaction_count_dict[imp]) if imp in self.interaction_count_dict else 0 for imp in transformed_impressions]
             current_rows[:, 31] = unleaked_clickout_count
             current_rows[:, 32] = [self.past_interaction_dict[row.user_id][::-1].index(imp) if imp in self.past_interaction_dict[row.user_id] else 0 for imp in transformed_impressions]
             current_rows[:, 33] = [np.array(padded_other_is_interacted)] * len(row.impressions)
             current_rows[:, 34] = [np.array(padded_other_is_clicked)] * len(row.impressions)
             current_rows[:, 35] = transformed_impressions == row.last_item
             current_rows[:, 36] = np.argsort(np.argsort(unleaked_clickout_count))
-            current_rows[:, 37] = GaussRankScaler().fit_transform(row.prices)
+            current_rows[:, 37] = GaussRankScaler().fit_transform(np.array(row.prices).reshape(-1, 1)).reshape(-1)
             current_rows[:, 38] = np.mean(current_rows[:, 30])
             current_rows[:, 39] = np.mean(current_rows[:, 28])
             current_rows[:, 40] = np.mean(current_rows[:, 26])
@@ -808,8 +749,6 @@ class NNDataGenerator():
             # current_rows[:, 41] = np.mean(finite_time_diff_array)
             # current_rows[:, 41] = np.std(current_rows[:, 30])
             # current_rows[:, 41] = 2 * last_interact_index - second_last_interact_index
-
-
             # current_rows[:, 41] = second_last_interact_index
 
             #TODO: Rank  of statistics
@@ -839,7 +778,7 @@ class NNDataGenerator():
             # current_rows[:, 16] = [np.delete(np.arange(25), i) for i in range(len(row.impressions))]
             # print(self.last_click_sess_dict[row.session_id], self.last_impressions_dict[row.session_id] == transformed_impressions.tolist())
 
-            if training or  row.item_id == self.transformed_nan_item:
+            if training or row.item_id == self.transformed_nan_item:
 
                 df_list.append(current_rows)
             else:
@@ -851,14 +790,11 @@ class NNDataGenerator():
             # pad current item_id to default dict
             self.past_interaction_dict[row.user_id] = self.past_interaction_dict[row.user_id][1:]
             self.past_interaction_dict[row.user_id].append(row.item_id)
-            
-            
+                        
             self.last_click_sess_dict[row.session_id] = row.item_id
             self.last_impressions_dict[row.session_id] = transformed_impressions.tolist()
             self.sess_last_step_dict[row.session_id] = row.step
             self.sess_time_diff_dict[row.session_id] = row.timestamp
-
-            
 
             # update last impression index
             if row.item_id != self.transformed_nan_item:
@@ -868,8 +804,18 @@ class NNDataGenerator():
 
         data = np.vstack(df_list)
         dtype_dict = {"city":"int32", "last_item":"int32", 'impression_index':'int32', "step":"int32","id":"int32", "user_id":"int32",
-                "item_id":"int32", "label": "int32", "price_rank":"int32", "mm_price":"float32", 'price':'float32', "last_click_item":"int32", "equal_last_impressions":"int8", 'last_click_impression':'int16', 'last_interact_index':'int16', 'price_diff':'float32','last_price':'float32','price_ratio':'float32','city_platform':'int32', 'is_clicked':'int8', 'is_interacted':'int8','item_popularity':'int32', 'is_interacted_image':'int8','is_interacted_deals':'int8','interaction_count':'int32','clickout_count':'int32','click_diff':'float32','equal_last_item':'int8','global_clickout_count_rank':'int8','rg_price':'float32','interaction_count_avg':'float32','avg_is_interacted_image':'float32','avg_is_interacted':'float32'}
-        df_columns= ['user_id', 'item_id', 'label', 'session_id', 'past_interactions', 'price_rank', 'city', 'last_item', 'impression_index', 'step', 'id', 'past_interactions_sess', 'past_actions_sess', 'mm_price','price','last_click_item','equal_last_impressions', 'last_click_impression','last_interact_index','price_diff','last_price','price_ratio','neighbor_prices','other_item_ids','city_platform', 'is_clicked', 'is_interacted', 'item_popularity','is_interacted_image','is_interacted_deals','interaction_count','clickout_count','click_diff','other_is_interacted','other_is_clicked','equal_last_item','global_clickout_count_rank','rg_price','interaction_count_avg','avg_is_interacted_image', 'avg_is_interacted']
+                "item_id":"int32", "label": "int32", "price_rank":"int32", "mm_price":"float32", 'price':'float32', "last_click_item":"int32", 
+                "equal_last_impressions":"int8", 'last_click_impression':'int16', 'last_interact_index':'int16', 'price_diff':'float32',
+                'last_price':'float32','price_ratio':'float32','city_platform':'int32', 'is_clicked':'int8', 'is_interacted':'int8',
+                'item_popularity':'int32', 'is_interacted_image':'int8','is_interacted_deals':'int8','interaction_count':'int32',
+                'clickout_count':'int32','click_diff':'float32','equal_last_item':'int8','global_clickout_count_rank':'int8',
+                'rg_price':'float32','interaction_count_avg':'float32','avg_is_interacted_image':'float32','avg_is_interacted':'float32'}
+        df_columns= ['user_id', 'item_id', 'label', 'session_id', 'past_interactions', 'price_rank', 'city', 'last_item', 'impression_index',
+                'step', 'id', 'past_interactions_sess', 'past_actions_sess', 'mm_price','price','last_click_item','equal_last_impressions', 
+                'last_click_impression','last_interact_index','price_diff','last_price','price_ratio','neighbor_prices','other_item_ids',
+                'city_platform', 'is_clicked', 'is_interacted', 'item_popularity','is_interacted_image','is_interacted_deals',
+                'interaction_count','clickout_count','click_diff','other_is_interacted','other_is_clicked','equal_last_item',
+                'global_clickout_count_rank','rg_price','interaction_count_avg','avg_is_interacted_image', 'avg_is_interacted']
         df = pd.DataFrame(data, columns=df_columns)
         df = df.astype(dtype= dtype_dict)
         if training:
@@ -879,12 +825,11 @@ class NNDataGenerator():
             label_test = pd.DataFrame(label_test, columns=df_columns)
             label_test = label_test.astype(dtype= dtype_dict)
             return df, label_test
+
     def instance_a_train_loader(self):
-
-
         train_data = self.train_data
-
         return NNDataLoader(train_data, self.config, shuffle=True, batch_size=self.config.batch_size, continuous_features=self.continuous_features)
+
     def evaluate_data_valid(self):
         val_data = self.val_data
         return NNDataLoader(val_data, self.config, shuffle=False, batch_size=self.config.batch_size, continuous_features=self.continuous_features)
@@ -898,11 +843,11 @@ if __name__ =='__main__':
     conf = NNConfiguration()
     data_gen = NNDataGenerator(conf)
     with timer("gen"):
-        for result in data_gen.instance_a_train_loader(128):
+        for result in data_gen.instance_a_train_loader():
             print(result[-1])
             print(torch.LongTensor(result[-1]))
         
-        for result in data_gen.instance_a_train_loader(128):
+        for result in data_gen.instance_a_train_loader():
             print(result[-1])
             print(torch.LongTensor(result[-1]))
             

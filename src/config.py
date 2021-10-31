@@ -11,7 +11,7 @@ class Configuration(object):
         self.num_epochs = 1
         self.batch_size = 128
         self.optimizer = 'adam'
-        self.use_cuda = True
+        self.use_cuda = False
         self.device_id = 0 
         self.early_stopping = 1
         self.loss = torch.nn.BCELoss

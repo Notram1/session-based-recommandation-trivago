@@ -1,7 +1,6 @@
 import torch
 from utils import *
 from data import *
-import torch.nn as nn
 
 
 class Net(torch.nn.Module):
@@ -41,10 +40,9 @@ class Net(torch.nn.Module):
         self.bn = torch.nn.BatchNorm1d(self.categorical_emb_dim*17)
         self.bn_hidden = torch.nn.BatchNorm1d(self.hidden_dims[0] + config.continuous_size*2+ 3 + config.neighbor_size )
         
-    def forward(self, item_id, past_interactions, mask, price_rank, city, last_item, impression_index, cont_features, star, past_interactions_sess, past_actions_sess, last_click_item, last_click_impression, last_interact_index, neighbor_prices, other_item_ids, city_platform):
-        embeddings = []
-        user_embeddings = []
-        batch_size = item_id.size(0)
+    def forward(self, item_id, past_interactions, mask, price_rank, city, last_item, impression_index, cont_features, 
+            star, past_interactions_sess, past_actions_sess, last_click_item, last_click_impression, last_interact_index, 
+            neighbor_prices, other_item_ids, city_platform):
         
         # embedding of all categorical features
         emb_item = self.emb_dict['item_id'](item_id)
@@ -69,23 +67,19 @@ class Net(torch.nn.Module):
         # user's past clicked-out item
         emb_past_interactions = emb_past_interactions.permute(0,2,1)
         pooled_interaction = F.max_pool1d(emb_past_interactions, kernel_size=self.config.sequence_length).squeeze(2)
-        
-        
+                
         # concatenate sequence of item ids and actions to model session dynamics
         emb_past_interactions_sess = torch.cat( [emb_past_interactions_sess, emb_past_actions_sess], dim=2)
         emb_past_interactions_sess , _ = self.gru_sess(emb_past_interactions_sess)
         emb_past_interactions_sess = emb_past_interactions_sess.permute(0,2,1)
         pooled_interaction_sess = F.max_pool1d(emb_past_interactions_sess, kernel_size=self.config.sess_length).squeeze(2)
-        
-        
+                
         # categorical feature interactions
         item_interaction =  emb_item * pooled_interaction
         item_last_item = emb_item * emb_last_item
         item_last_click_item = emb_item * emb_last_click_item
         imp_last_idx = emb_impression_index * emb_last_interact_index
-        
-        
-        
+                
         # efficiently compute the aggregation of feature interactions 
         emb_list = [emb_item, pooled_interaction, emb_price_rank, emb_city, emb_last_item, emb_impression_index, emb_star]
         emb_concat = torch.cat(emb_list, dim=1)
@@ -96,9 +90,11 @@ class Net(torch.nn.Module):
         # compute the square of continuous features
         squared_cont = torch.pow(cont_features, 2)
 
-
         # DNN part
-        concat = torch.cat([emb_item, pooled_interaction, emb_price_rank, emb_city, emb_last_item, emb_impression_index, item_interaction, item_last_item, emb_star, pooled_interaction_sess, emb_last_click_item, emb_last_click_impression, emb_last_interact_index, item_last_click_item, imp_last_idx, pooled_other_item_ids, emb_city_platform] , dim=1)
+        concat = torch.cat([emb_item, pooled_interaction, emb_price_rank, emb_city, emb_last_item, emb_impression_index, 
+                        item_interaction, item_last_item, emb_star, pooled_interaction_sess, emb_last_click_item, 
+                        emb_last_click_impression, emb_last_interact_index, item_last_click_item, imp_last_idx, 
+                        pooled_other_item_ids, emb_city_platform] , dim=1)
         concat = self.bn(concat)
         
         hidden = torch.nn.ReLU()(self.hidden1(concat))
