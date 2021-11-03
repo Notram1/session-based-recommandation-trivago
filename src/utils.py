@@ -162,7 +162,7 @@ class GaussRankScaler(BaseEstimator, TransformerMixin):
             The interpolation function for each feature in the training set.
         """
 
-    def __init__(self, epsilon=1e-4, copy=True, n_jobs=None, interp_kind='linear', interp_copy=False):
+    def __init__(self, epsilon=1e-8, copy=True, n_jobs=None, interp_kind='linear', interp_copy=False):
         self.epsilon = epsilon
         self.copy = copy
         self.interp_kind = interp_kind
@@ -190,9 +190,8 @@ class GaussRankScaler(BaseEstimator, TransformerMixin):
         rank = np.argsort(np.argsort(x))
         bound = 1.0 - self.epsilon
         factor = np.max(rank) / 2.0 * bound
-        scaled_rank = np.clip(rank / factor - bound, -bound, bound)
-        return interp1d(
-            x, scaled_rank, kind=self.interp_kind, copy=self.interp_copy, fill_value=self.fill_value)
+        scaled_rank = np.clip(rank / (factor + self.epsilon) - bound, -bound, bound)
+        return self._interp1d_patched(x, scaled_rank)
 
     def transform(self, X, copy=None):
         """Scale the data with the Gauss Rank algorithm
@@ -232,9 +231,16 @@ class GaussRankScaler(BaseEstimator, TransformerMixin):
         return X
 
     def _inverse_transform(self, i, x):
-        inv_interp_func = interp1d(self.interp_func_[i].y, self.interp_func_[i].x, kind=self.interp_kind,
-                                   copy=self.interp_copy, fill_value=self.fill_value)
+        inv_interp_func = self._interp1d_patched(self.interp_func_[i].y, self.interp_func_[i].x)
         return inv_interp_func(erf(x))
+
+    def _interp1d_patched(self, x, y):
+        x, y = map(np.asarray, (x, y))
+        if x.size < 2:
+            # print('RankGauss interpolation - x, y length less than 2: ', x, y)
+            x=np.append(x, x[0]+1)
+            y=np.append(y, y[0])        
+        return interp1d(x, y, kind=self.interp_kind, copy=self.interp_copy, fill_value=self.fill_value)
 
     @staticmethod
     def drop_duplicates(x):

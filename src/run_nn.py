@@ -7,6 +7,7 @@ from torch.autograd import Variable
 from tqdm import tqdm
 import numpy as np
 import os
+import logging
 
 def get_prediction(loader, net):
     net.eval()
@@ -75,55 +76,66 @@ def evaluate_valid(val_loader, val_df, net, model_name):
 
 if __name__ =='__main__':
     model_name = 'nn_xnn_time_diff_v2'
+    preproc_data_name = 'preproc_data'
 
     torch.backends.cudnn.deterministic = True
     seed_everything(42)
 
-    configuration = NNConfiguration()
-    print(configuration.get_attributes())
+    config = NNConfiguration()
+    print(config.get_attributes())
 
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(configuration.device_id)
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(config.device_id)
     print("CUDA_VISIBLE_DEVICES: ", os.environ["CUDA_VISIBLE_DEVICES"])
 
-    if configuration.sub_sample:
-        model_name += '_140k'
+    if config.sub_sample is not None:
+        model_name += '_{:.3f}'.format(config.sub_sample)
+        preproc_data_name += '_{:.3f}'.format(config.sub_sample)
     else:
         model_name += '_all'
+        preproc_data_name += '_all'
 
-    if configuration.use_test:
+    if config.use_test:
         model_name += '_ut'
+        preproc_data_name += '_ut'
 
-    if configuration.debug:
+    if config.debug:
         model_name += '_db'
+        preproc_data_name += '_db'
 
-    model_name += f'_{configuration.device_id}'
+    model_name += f'_{config.device_id}'
     weight_path = f"../weights/{model_name}.model"
 
-    data_gen = NNDataGenerator(configuration)
-    print(configuration.get_attributes())
+    # Create or load dataset
+    if config.load_preproc_data:
+        with open(f'{input_dir}/{preproc_data_name}.p', 'rb') as f:
+            data_gen = pickle.load(f)
+        config.append_diff(data_gen.config)
+        print('Preprocessed data has been loaded!')
+    else:
+        data_gen = NNDataGenerator(config)
+        with open(f'{input_dir}/{preproc_data_name}.p', 'wb') as f:
+            pickle.dump(data_gen, f, protocol=4)
+        print('Preprocessed data has been saved!')
+    print(config.get_attributes())
     valid_data = data_gen.val_data
     train_data= data_gen.train_data
 
-    if configuration.use_cuda:
-        net = Net(configuration).cuda()
-    else:
-        net = Net(configuration)
-
-    optim = use_optimizer(net, configuration)
+    device_type = torch.device('cuda') if (torch.cuda.is_available() and config.use_cuda==True) else torch.device('cpu')
+    net = Net(config).to(device=device_type)
+    optim = use_optimizer(net, config)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, 'min',min_lr=0.0005, factor=0.7, verbose=True)
     print(net)
-
-    device_type = torch.device('cuda') if (torch.cuda.is_available() and configuration.use_cuda==True) else torch.device('cpu')
-    crit = configuration.loss()
+    
+    crit = config.loss()
     best_mrr = 0
-    early_stopping = configuration.early_stopping
+    early_stopping = config.early_stopping
     not_improve_round = 0
     val_loader = data_gen.evaluate_data_valid()
     test_loader =data_gen.instance_a_test_loader()
     train_loader = data_gen.instance_a_train_loader()
     n_iter = 0
     stopped = False
-    for i in range(configuration.num_epochs):        
+    for i in range(config.num_epochs):        
         net.train()
         for batch_id, data in enumerate(tqdm(train_loader)):
             optim.zero_grad()
@@ -176,7 +188,7 @@ if __name__ =='__main__':
     net.load_state_dict(torch.load(weight_path))    
     print("BEST mrr", best_mrr)
 
-    if configuration.debug:
+    if config.debug:
         exit(0)
             
     test_df = data_gen.test_data

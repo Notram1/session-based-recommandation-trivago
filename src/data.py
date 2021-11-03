@@ -1,10 +1,9 @@
-import torch
 import numpy as np
 import pandas as pd
 import pickle
 import gc
 from constant import *
-from utils import *
+from utils import GaussRankScaler, CategoricalEncoder, compute_rank, timer
 from config import *
 import torch
 from torch.utils.data import DataLoader, Dataset
@@ -18,7 +17,7 @@ from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 
-class NNDataLoader():
+class NNDataLoader(DataLoader):
     def __init__(self, data, config, shuffle=True, batch_size=128, continuous_features=None):
         self.item_id = torch.LongTensor(data.item_id.values)
         self.config = config
@@ -75,7 +74,7 @@ class NNDataLoader():
 
 
 
-class NNDataGenerator():
+class NNDataGenerator(Dataset):
     """Construct dataset for NN"""
     def __init__(self, config):
         """
@@ -103,11 +102,12 @@ class NNDataGenerator():
             item_meta['item_id'] = item_meta['item_id'].apply(str)
 
 
-        if config.sub_sample:
-            with open('../input/selected_users_140k.p', 'rb') as f:
-                selected_users = pickle.load(f)
-
-            train = train.loc[train.user_id.isin(selected_users),:]
+        if config.sub_sample is not None:
+            # with open('../input/selected_users_140k.p', 'rb') as f:
+            #     selected_users = pickle.load(f)
+            # train = train.loc[train.user_id.isin(selected_users),:]
+            train = train[:np.floor(len(train) * config.sub_sample).astype(int)]
+            test = test[:np.floor(len(test) * config.sub_sample).astype(int)]
         
         if config.debug:
             # train = train.sample(1000)
@@ -243,9 +243,8 @@ class NNDataGenerator():
         #     self.cat_encoders['user_id'] = pickle.load(f)
         # self.cat_encoders['user_id'].fit(data.user_id.tolist() )
 
-
-        for col in self.all_cat_columns:
-            
+        self.config.num_embeddings = {}
+        for col in self.all_cat_columns:            
             train[col] = self.cat_encoders[col].transform(train[col].values)
             test[col] = self.cat_encoders[col].transform(test[col].values)
             self.config.num_embeddings[col] = self.cat_encoders[col].n_elements
@@ -402,7 +401,7 @@ class NNDataGenerator():
         
         tsvd = TruncatedSVD(n_components=30, n_iter=10, random_state=None)
         svd_matrix = tsvd.fit_transform(item_properties_df.drop( ['star', 'item_id'],axis=1).values)
-        print("explained ratio in item properties: ", tsvd.explained_variance_ratio_.sum())
+        print("TSVD explained ratio in item properties: ", tsvd.explained_variance_ratio_.sum())
         svd_ip_columns = [ f'svd_ip_{i}' for i in np.arange(30)]
         item_properties_df = pd.DataFrame(svd_matrix, columns=svd_ip_columns)
         for c in svd_ip_columns:
@@ -444,7 +443,7 @@ class NNDataGenerator():
         
         tsvd = TruncatedSVD(n_components=10, n_iter=10, random_state=None)
         svd_matrix = tsvd.fit_transform(filters_df.drop( ['id'],axis=1).values)
-        print("explained ratio in filters: ", tsvd.explained_variance_ratio_.sum())
+        print("TSVD explained ratio in filters: ", tsvd.explained_variance_ratio_.sum())
         svd_ft_columns = [ f'svd_ft_{i}' for i in np.arange(10)]
         filters_df = pd.DataFrame(svd_matrix, columns=svd_ft_columns)
         for c in svd_ft_columns:
