@@ -401,7 +401,7 @@ class NNDataGenerator(Dataset):
         
         tsvd = TruncatedSVD(n_components=30, n_iter=10, random_state=None)
         svd_matrix = tsvd.fit_transform(item_properties_df.drop( ['star', 'item_id'],axis=1).values)
-        print("TSVD explained ratio in item properties: ", tsvd.explained_variance_ratio_.sum())
+        self.config.logger.info(f"TSVD explained ratio in item properties: {tsvd.explained_variance_ratio_.sum()}")
         svd_ip_columns = [ f'svd_ip_{i}' for i in np.arange(30)]
         item_properties_df = pd.DataFrame(svd_matrix, columns=svd_ip_columns)
         for c in svd_ip_columns:
@@ -443,7 +443,7 @@ class NNDataGenerator(Dataset):
         
         tsvd = TruncatedSVD(n_components=10, n_iter=10, random_state=None)
         svd_matrix = tsvd.fit_transform(filters_df.drop( ['id'],axis=1).values)
-        print("TSVD explained ratio in filters: ", tsvd.explained_variance_ratio_.sum())
+        self.config.logger.info(f"TSVD explained ratio in filters: {tsvd.explained_variance_ratio_.sum()}")
         svd_ft_columns = [ f'svd_ft_{i}' for i in np.arange(10)]
         filters_df = pd.DataFrame(svd_matrix, columns=svd_ft_columns)
         for c in svd_ft_columns:
@@ -567,7 +567,7 @@ class NNDataGenerator(Dataset):
         
         for c in self.continuous_features:
             if self.train_data[c].isna().sum() >0 or self.val_data[c].isna().sum() >0 or self.test_data[c].isna().sum() >0:
-                print("is null!!", c)
+                self.config.logger.warning(f"There is NaN in column {c} of the dataset!")
 
         self.config.num_embeddings['price_rank'] = 25
         self.config.num_embeddings['impression_index'] = 26
@@ -583,9 +583,9 @@ class NNDataGenerator(Dataset):
         self.all_cat_columns = self.config.all_cat_columns
         
         if self.config.verbose:
-            print(f"Number of training data: {self.train_data.shape}")
-            print(f"Number of validation data: {self.val_data.shape}")
-            print(f"Number of test data: {self.test_data.shape}")
+            self.config.logger.info(f"Number of training data: {self.train_data.shape}")
+            self.config.logger.info(f"Number of validation data: {self.val_data.shape}")
+            self.config.logger.info(f"Number of test data: {self.test_data.shape}")
     
     def get_features(self):
         return ', '.join([c  for c in self.continuous_features if 'svd' not in c])

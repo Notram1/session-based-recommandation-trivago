@@ -15,11 +15,11 @@ class Configuration(object):
         self.device_id = 1 
         self.early_stopping = 1
         self.loss = torch.nn.BCELoss
-        self.debug = False
+        self.debug = True
         self.sub_sample = 2.0/8 # proprotion of training and test data to be used. Use None for full data.
         self.slack = True
         self.use_test = True if (self.sub_sample is None) else False
-        self.load_preproc_data = True # True - load preprocessed data from input folder. False - preprocess data and save as pickle into input folder.
+        self.load_preproc_data = False # True - load preprocessed data from input folder. False - preprocess data and save as pickle into input folder.
 
     def __getitem__(cls, x):
         '''make configuration subscriptable'''

@@ -81,11 +81,20 @@ if __name__ =='__main__':
     torch.backends.cudnn.deterministic = True
     seed_everything(42)
 
+    logging.basicConfig(filename= f'../output/{model_name}_{time.strftime("%Y%m%d-%H%M%S")}.log',
+                        filemode='a',
+                        # format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
+                        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                        datefmt='%Y-%m-%d %H:%M:%S',
+                        level=logging.DEBUG)
+    logger = logging.getLogger('__main__')
+
     config = NNConfiguration()
-    print(config.get_attributes())
+    config.logger = logger
+    logger.info(config.get_attributes())
 
     os.environ["CUDA_VISIBLE_DEVICES"] = str(config.device_id)
-    print("CUDA_VISIBLE_DEVICES: ", os.environ["CUDA_VISIBLE_DEVICES"])
+    logger.info(f"CUDA_VISIBLE_DEVICES: {os.environ['CUDA_VISIBLE_DEVICES']}")
 
     if config.sub_sample is not None:
         model_name += '_{:.3f}'.format(config.sub_sample)
@@ -110,13 +119,13 @@ if __name__ =='__main__':
         with open(f'{input_dir}/{preproc_data_name}.p', 'rb') as f:
             data_gen = pickle.load(f)
         config.append_diff(data_gen.config)
-        print('Preprocessed data has been loaded!')
+        logger.info('Preprocessed data has been loaded!')
     else:
         data_gen = NNDataGenerator(config)
         with open(f'{input_dir}/{preproc_data_name}.p', 'wb') as f:
             pickle.dump(data_gen, f, protocol=4)
-        print('Preprocessed data has been saved!')
-    print(config.get_attributes())
+        logger.info('Preprocessed data has been saved!')
+    logger.info(config.get_attributes())
     valid_data = data_gen.val_data
     train_data= data_gen.train_data
 
@@ -124,7 +133,7 @@ if __name__ =='__main__':
     net = Net(config).to(device=device_type)
     optim = use_optimizer(net, config)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, 'min',min_lr=0.0005, factor=0.7, verbose=True)
-    print(net)
+    logger.info(net)
     
     crit = config.loss()
     best_mrr = 0
@@ -176,17 +185,17 @@ if __name__ =='__main__':
         scheduler.step(val_loss)
 
         if mrr > best_mrr:
-            print(f"improve from {best_mrr} to {mrr}")
+            logger.info(f"improve from {best_mrr} to {mrr}")
             best_mrr = mrr
             not_improve_round = 0
             torch.save(net.state_dict(), weight_path)
         else:
-            print(f"didn't improve from {best_mrr} to {mrr}")
+            logger.info(f"didn't improve from {best_mrr} to {mrr}")
             not_improve_round += 1
         if not_improve_round >= early_stopping:
             break
     net.load_state_dict(torch.load(weight_path))    
-    print("BEST mrr", best_mrr)
+    logger.info(f"BEST mrr: {best_mrr}")
 
     if config.debug:
         exit(0)
@@ -213,7 +222,7 @@ if __name__ =='__main__':
     prediction_df['session_id'] = session_ids
     prediction_df['item_recommendations'] = predictions
 
-    print("pred df shape", prediction_df.shape)
+    logger.debug(f"pred df shape: {prediction_df.shape}")
     sub_df = pd.read_csv('../input/submission_popular.csv')
     sub_df.drop('item_recommendations', axis=1, inplace=True)
     sub_df = sub_df.merge(prediction_df, on="session_id")
