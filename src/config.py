@@ -8,18 +8,18 @@ class Configuration(object):
 
     def __init__(self):
         self.alias = None
-        self.num_epochs = 1
+        self.num_epochs = 10
         self.batch_size = 128
         self.optimizer = 'adam'
         self.use_cuda = True
-        self.device_id = 1 
-        self.early_stopping = 1
+        self.device_id = 0 
+        self.early_stopping = 2
         self.loss = torch.nn.BCELoss
-        self.debug = True
+        self.debug = False
         self.sub_sample = 2.0/8 # proprotion of training and test data to be used. Use None for full data.
         self.slack = True
         self.use_test = True if (self.sub_sample is None) else False
-        self.load_preproc_data = False # True - load preprocessed data from input folder. False - preprocess data and save as pickle into input folder.
+        self.load_preproc_data = True # True - load preprocessed data from input folder. False - preprocess data and save as pickle into input folder.
 
     def __getitem__(cls, x):
         '''make configuration subscriptable'''
@@ -87,25 +87,8 @@ class NNConfiguration(Configuration):
         self.sess_length = 30
         self.verbose = True
         self.hidden_dims = [256 , 128]
-        self.dropout_rate = 0
+        self.dropout_rate = 0.1 # in transformer postional encoding and multihead attetion layers
         self.loss = torch.nn.BCELoss
-
-
-class LGBConfiguration(Configuration):
-
-    def __init__(self):
-        super(LGBConfiguration, self).__init__()
-        self.categorical_emb_dim = 128
-        self.alias = 'LGB'
-        self.sequence_length = 10
-        self.sess_length = 30
-
-class XGBConfiguration(Configuration):
-
-    def __init__(self):
-        super(XGBConfiguration, self).__init__()
-        self.categorical_emb_dim = 128
-        self.alias = 'XGB'
-        self.sequence_length = 10
-        self.sess_length = 30        
+        self.model = 2 # 0: GruNet1, 1: GruNet2, 2: TransformerNet1, 3: TransformerNet2
+       
 
