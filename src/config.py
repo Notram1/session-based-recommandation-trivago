@@ -8,17 +8,17 @@ class Configuration(object):
 
     def __init__(self):
         self.alias = None
-        self.num_epochs = 10
+        self.num_epochs = 5
         self.batch_size = 128
         self.optimizer = 'adam'
         self.use_cuda = True
         self.device_id = 0 
-        self.early_stopping = 2
+        self.early_stopping = 1
         self.loss = torch.nn.BCELoss
         self.debug = False
-        self.sub_sample = 2.0/8 # proprotion of training and test data to be used. Use None for full data.
+        self.sub_sample = 2.0/8 # proportion of training and test data to be used. Use None for full data.
         self.slack = True
-        self.use_test = True if (self.sub_sample is None) else False
+        self.use_test = True if (self.debug is False) else False
         self.load_preproc_data = True # True - load preprocessed data from input folder. False - preprocess data and save as pickle into input folder.
 
     def __getitem__(cls, x):
@@ -89,6 +89,6 @@ class NNConfiguration(Configuration):
         self.hidden_dims = [256 , 128]
         self.dropout_rate = 0.1 # in transformer postional encoding and multihead attetion layers
         self.loss = torch.nn.BCELoss
-        self.model = 2 # 0: GruNet1, 1: GruNet2, 2: TransformerNet1, 3: TransformerNet2
+        self.model = 3 # 0: GruNet1, 1: GruNet2, 2: TransformerNet1, 3: TransformerNet2
        
 
