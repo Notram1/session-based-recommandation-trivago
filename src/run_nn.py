@@ -70,16 +70,19 @@ def evaluate_valid(val_loader, val_df, net, model_name):
     mrr = compute_mean_reciprocal_rank(rss)
     mrr_group = {i:(len(rss_group[i]), compute_mean_reciprocal_rank(rss_group[i])) for i in range(1,26)}
     # print(mrr_group)
-    pickle.dump( incorrect_session, open(f'../output/{model_name}_val_incorrect_order.p','wb'))
+    #pickle.dump( incorrect_session, open(f'../output/{model_name}_val_incorrect_order.p','wb'))
 
     return mrr, mrr_group, val_loss
 
 if __name__ =='__main__':
-    model_name = 'nn_xnn_time_diff_v2'
     preproc_data_name = 'preproc_data'
 
     torch.backends.cudnn.deterministic = True
     seed_everything(42)
+
+    config = NNConfiguration()
+    model_list = [GruNet1, GruNet2, TransformerNet1, TransformerNet2]
+    model_name = str(model_list[config.model].__name__)
 
     logging.basicConfig(filename= f'../output/{model_name}_{time.strftime("%Y%m%d-%H%M%S")}.log',
                         filemode='a',
@@ -90,7 +93,6 @@ if __name__ =='__main__':
     logger = logging.getLogger('__main__')
 
     try:
-        config = NNConfiguration()
         config.logger = logger
         logger.info(config.get_attributes())
 
@@ -103,10 +105,6 @@ if __name__ =='__main__':
         else:
             model_name += '_all'
             preproc_data_name += '_all'
-
-        if config.use_test:
-            model_name += '_ut'
-            preproc_data_name += '_ut'
 
         if config.debug:
             model_name += '_db'
@@ -132,7 +130,6 @@ if __name__ =='__main__':
 
         device_type = torch.device('cuda') if (torch.cuda.is_available() and config.use_cuda==True) else torch.device('cpu')
         
-        model_list = [GruNet1, GruNet2, TransformerNet1, TransformerNet2]
         if config.model in range(len(model_list)):
             net = model_list[config.model](config).to(device=device_type)
         else:
@@ -140,7 +137,7 @@ if __name__ =='__main__':
                                  options are {range(len(model_list))}""")
             
         optim = use_optimizer(net, config)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, 'min',min_lr=0.0005, factor=0.7, verbose=True)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, 'min', min_lr=0.0005, factor=0.7, verbose=True)
         logger.info(net)
         
         crit = config.loss()
@@ -203,39 +200,42 @@ if __name__ =='__main__':
             if not_improve_round >= early_stopping:
                 break
         net.load_state_dict(torch.load(weight_path))    
-        logger.info(f"BEST mrr: {best_mrr}")
+        logger.info(f"BEST validation mrr: {best_mrr}")
 
-        if config.debug:
-            exit(0)
+        if config.use_test:
+            # test model performance        
+            test_df = data_gen.test_data
+            test_mrr, test_mrr_group, test_loss = evaluate_valid(test_loader, test_df, net, model_name)
+            logger.info("Test mrr: {:.5f}; Test loss: {}".format(test_mrr, test_loss))
+
+            # uncomment to create and output prediction in the test set
+            # test_df['score'], _ = get_prediction(test_loader, net)
+
+            # with open(f'../output/{model_name}_test_score.p', 'wb') as f:
+            #     pickle.dump( test_df.loc[:,['score', 'session_id', 'step']],f, protocol=4)
                 
-        test_df = data_gen.test_data
-        test_df['score'], _ = get_prediction(test_loader, net)
+            # grouped_test = test_df.groupby('session_id')
+            # predictions = []
+            # session_ids = []
+            # for session_id, group in grouped_test:        
+            #     scores = group['score']
+            #     sorted_arg = np.flip(np.argsort(scores))
+            #     sorted_item_ids = group['item_id'].values[sorted_arg]
+            #     sorted_item_ids = data_gen.cat_encoders['item_id'].reverse_transform(sorted_item_ids)
+            #     sorted_item_string = ' '.join([str(i) for i in sorted_item_ids])
+            #     predictions.append(sorted_item_string)
+            #     session_ids.append(session_id)
 
-        with open(f'../output/{model_name}_test_score.p', 'wb') as f:
-            pickle.dump( test_df.loc[:,['score', 'session_id', 'step']],f, protocol=4)
-            
-        grouped_test = test_df.groupby('session_id')
-        predictions = []
-        session_ids = []
-        for session_id, group in grouped_test:        
-            scores = group['score']
-            sorted_arg = np.flip(np.argsort(scores))
-            sorted_item_ids = group['item_id'].values[sorted_arg]
-            sorted_item_ids = data_gen.cat_encoders['item_id'].reverse_transform(sorted_item_ids)
-            sorted_item_string = ' '.join([str(i) for i in sorted_item_ids])
-            predictions.append(sorted_item_string)
-            session_ids.append(session_id)
+            # prediction_df = pd.DataFrame()
+            # prediction_df['session_id'] = session_ids
+            # prediction_df['item_recommendations'] = predictions
 
-        prediction_df = pd.DataFrame()
-        prediction_df['session_id'] = session_ids
-        prediction_df['item_recommendations'] = predictions
+            # logger.debug(f"pred df shape: {prediction_df.shape}")
+            # sub_df = pd.read_csv('../input/submission_popular.csv')
+            # sub_df.drop('item_recommendations', axis=1, inplace=True)
+            # sub_df = sub_df.merge(prediction_df, on="session_id")
+            # # sub_df['item_recommendations'] = predictions
 
-        logger.debug(f"pred df shape: {prediction_df.shape}")
-        sub_df = pd.read_csv('../input/submission_popular.csv')
-        sub_df.drop('item_recommendations', axis=1, inplace=True)
-        sub_df = sub_df.merge(prediction_df, on="session_id")
-        # sub_df['item_recommendations'] = predictions
-
-        sub_df.to_csv(f'../output/{model_name}.csv', index=None)
+            # sub_df.to_csv(f'../output/{model_name}.csv', index=None)
     except Exception as Argument:
         logger.exception(Argument)
