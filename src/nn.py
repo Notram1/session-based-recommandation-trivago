@@ -297,9 +297,9 @@ class TransformerNet1(torch.nn.Module):
         hidden = self.bn_hidden(hidden)
         hidden = torch.nn.ReLU()(self.hidden2(hidden))
     
-        output = torch.sigmoid(self.output(hidden)).squeeze()
-                
+        output = torch.sigmoid(self.output(hidden)).squeeze()                
         return output
+
     
 class TransformerNet2(torch.nn.Module):
     def __init__(self, config):
@@ -330,12 +330,14 @@ class TransformerNet2(torch.nn.Module):
         self.pos_encoder = PositionalEncoding(d_model= self.categorical_emb_dim, dropout= self.config.dropout_rate)
 
         # multi-head transformer blocks 
-        self.transformer = nn.Transformer(d_model=self.categorical_emb_dim, nhead=8, num_encoder_layers=6, num_decoder_layers=6,
-                                    dim_feedforward=self.hidden_dims[0], dropout=self.config.dropout_rate, batch_first=True)
+        encoder_layers = nn.TransformerEncoderLayer(d_model=self.categorical_emb_dim, nhead=8, dim_feedforward=self.hidden_dims[0], 
+                                                    dropout=self.config.dropout_rate, batch_first=True)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layers, num_layers=6)
         
         # hidden layers
         self.hidden = torch.nn.Linear(self.categorical_emb_dim * 104 + config.continuous_size + config.neighbor_size, self.hidden_dims[1])
-            
+        self.bn_hidden = torch.nn.BatchNorm1d(self.hidden_dims[1])
+
         # output layer
         self.output = torch.nn.Linear(self.hidden_dims[1], 1)
         
@@ -365,14 +367,13 @@ class TransformerNet2(torch.nn.Module):
                         emb_star, emb_past_interactions_sess, emb_past_actions_sess, emb_last_click_item, emb_last_click_impression,
                         emb_last_interact_index, emb_city_platform, emb_other_item_ids], dim=1) * np.sqrt(self.categorical_emb_dim)
         src = self.pos_encoder(src)
-        tgt = torch.zeros_like(src)
 
-        transformer_out = self.transformer(src, tgt)
+        transformer_out = self.transformer_encoder(src)
         
         hidden = torch.cat( [transformer_out.view(transformer_out.size(0), -1), cont_features, neighbor_prices] , dim=1)
-        hidden = torch.nn.ReLU()(self.hidden(hidden))
+        hidden = torch.nn.ReLU()(self.bn_hidden(self.hidden(hidden)))
         
-        output = torch.sigmoid(self.output(hidden)).squeeze()        
+        output = torch.sigmoid(self.output(hidden)).squeeze()         
         return output
     
 
