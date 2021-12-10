@@ -68,5 +68,6 @@ The submission files are stored in the ```output``` directory. The first time yo
 | GruNet1      | 0.667437 | 0.25 |
 | GruNet2    | 0.668033 |   0.25  |
 | TransformerNet1 | 0.659480      |    0.25  |
-| TransformerNet2 | 0.657240      |    0.25  |
+| TransformerNet2 | 0.660470     |    0.25  |
+
 *Best performing Deep Learning model 

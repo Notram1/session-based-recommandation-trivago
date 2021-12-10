@@ -103,17 +103,14 @@ class NNDataGenerator(Dataset):
 
 
         if config.sub_sample is not None:
-            # with open('../input/selected_users_140k.p', 'rb') as f:
-            #     selected_users = pickle.load(f)
-            # train = train.loc[train.user_id.isin(selected_users),:]
             train = train[:np.floor(len(train) * config.sub_sample).astype(int)]
             test = test[:np.floor(len(test) * config.sub_sample).astype(int)]
         
         if config.debug:
-            # train = train.sample(1000)
-            # test = test.sample(1000)
-            train = train[:1000]
-            test = test[:1000]
+            train = train.sample(1000)
+            test = test.sample(1000)
+            #train = train[:1000]
+            #test = test[:1000]
 
         
         train.rename(columns={'reference': 'item_id', 'action_type':'action'}, inplace=True)

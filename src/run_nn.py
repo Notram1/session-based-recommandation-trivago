@@ -87,7 +87,7 @@ if __name__ =='__main__':
     logging.basicConfig(filename= f'../output/{model_name}_{time.strftime("%Y%m%d-%H%M%S")}.log',
                         filemode='a',
                         # format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
-                        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                        format='%(asctime)s - %(levelname)s - %(message)s',
                         datefmt='%Y-%m-%d %H:%M:%S',
                         level=logging.DEBUG)
     logger = logging.getLogger('__main__')
@@ -137,7 +137,7 @@ if __name__ =='__main__':
                                  options are {range(len(model_list))}""")
             
         optim = use_optimizer(net, config)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, 'min', min_lr=0.0005, factor=0.7, verbose=True)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, 'min', patience=1, min_lr=0.0005, factor=0.7, verbose=True)
         logger.info(net)
         
         crit = config.loss()
@@ -202,40 +202,35 @@ if __name__ =='__main__':
         net.load_state_dict(torch.load(weight_path))    
         logger.info(f"BEST validation mrr: {best_mrr}")
 
-        if config.use_test:
-            # test model performance        
+        if config.use_test:       
             test_df = data_gen.test_data
-            test_mrr, test_mrr_group, test_loss = evaluate_valid(test_loader, test_df, net, model_name)
-            logger.info("Test mrr: {:.5f}; Test loss: {}".format(test_mrr, test_loss))
+            test_df['score'], _ = get_prediction(test_loader, net)
 
-            # uncomment to create and output prediction in the test set
-            # test_df['score'], _ = get_prediction(test_loader, net)
-
-            # with open(f'../output/{model_name}_test_score.p', 'wb') as f:
-            #     pickle.dump( test_df.loc[:,['score', 'session_id', 'step']],f, protocol=4)
+            with open(f'../output/{model_name}_test_score.p', 'wb') as f:
+                pickle.dump( test_df.loc[:,['score', 'session_id', 'step']],f, protocol=4)
                 
-            # grouped_test = test_df.groupby('session_id')
-            # predictions = []
-            # session_ids = []
-            # for session_id, group in grouped_test:        
-            #     scores = group['score']
-            #     sorted_arg = np.flip(np.argsort(scores))
-            #     sorted_item_ids = group['item_id'].values[sorted_arg]
-            #     sorted_item_ids = data_gen.cat_encoders['item_id'].reverse_transform(sorted_item_ids)
-            #     sorted_item_string = ' '.join([str(i) for i in sorted_item_ids])
-            #     predictions.append(sorted_item_string)
-            #     session_ids.append(session_id)
+            grouped_test = test_df.groupby('session_id')
+            predictions = []
+            session_ids = []
+            for session_id, group in grouped_test:        
+                scores = group['score']
+                sorted_arg = np.flip(np.argsort(scores))
+                sorted_item_ids = group['item_id'].values[sorted_arg]
+                sorted_item_ids = data_gen.cat_encoders['item_id'].reverse_transform(sorted_item_ids)
+                sorted_item_string = ' '.join([str(i) for i in sorted_item_ids])
+                predictions.append(sorted_item_string)
+                session_ids.append(session_id)
 
-            # prediction_df = pd.DataFrame()
-            # prediction_df['session_id'] = session_ids
-            # prediction_df['item_recommendations'] = predictions
+            prediction_df = pd.DataFrame()
+            prediction_df['session_id'] = session_ids
+            prediction_df['item_recommendations'] = predictions
 
-            # logger.debug(f"pred df shape: {prediction_df.shape}")
-            # sub_df = pd.read_csv('../input/submission_popular.csv')
-            # sub_df.drop('item_recommendations', axis=1, inplace=True)
-            # sub_df = sub_df.merge(prediction_df, on="session_id")
-            # # sub_df['item_recommendations'] = predictions
+            logger.debug(f"pred df shape: {prediction_df.shape}")
+            sub_df = pd.read_csv('../input/submission_popular.csv')
+            sub_df.drop('item_recommendations', axis=1, inplace=True)
+            sub_df = sub_df.merge(prediction_df, on="session_id")
+            # sub_df['item_recommendations'] = predictions
 
-            # sub_df.to_csv(f'../output/{model_name}.csv', index=None)
+            sub_df.to_csv(f'../output/{model_name}.csv', index=None)
     except Exception as Argument:
         logger.exception(Argument)

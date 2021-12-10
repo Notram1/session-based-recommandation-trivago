@@ -335,8 +335,10 @@ class TransformerNet2(torch.nn.Module):
         self.transformer_encoder = nn.TransformerEncoder(encoder_layers, num_layers=6)
         
         # hidden layers
-        self.hidden = torch.nn.Linear(self.categorical_emb_dim * 104 + config.continuous_size + config.neighbor_size, self.hidden_dims[1])
-        self.bn_hidden = torch.nn.BatchNorm1d(self.hidden_dims[1])
+        self.hidden1 = torch.nn.Linear(self.categorical_emb_dim * 104 + config.continuous_size + config.neighbor_size, self.hidden_dims[0])
+        self.hidden2 = torch.nn.Linear(self.hidden_dims[0], self.hidden_dims[1])
+        self.bn_hidden1 = torch.nn.BatchNorm1d(self.hidden_dims[0])
+        self.bn_hidden2 = torch.nn.BatchNorm1d(self.hidden_dims[1])
 
         # output layer
         self.output = torch.nn.Linear(self.hidden_dims[1], 1)
@@ -371,7 +373,8 @@ class TransformerNet2(torch.nn.Module):
         transformer_out = self.transformer_encoder(src)
         
         hidden = torch.cat( [transformer_out.view(transformer_out.size(0), -1), cont_features, neighbor_prices] , dim=1)
-        hidden = torch.nn.ReLU()(self.bn_hidden(self.hidden(hidden)))
+        hidden = torch.nn.ReLU()(self.bn_hidden1(self.hidden1(hidden)))
+        hidden = torch.nn.ReLU()(self.bn_hidden2(self.hidden2(hidden)))
         
         output = torch.sigmoid(self.output(hidden)).squeeze()         
         return output
